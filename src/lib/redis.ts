@@ -17,7 +17,7 @@ export async function setCompressedJson(key: string, data: any) {
   const compressed = await gzip(jsonString); 
 
   const base64 = compressed.toString("base64");
-  await redisClient.set(`feed:${key}`, base64);
+  await redisClient.set(`feed:${key}`, base64 , 'EX' , 60 * 60 * 8);
 }
 
 export async function getCompressedJson(key: string) {

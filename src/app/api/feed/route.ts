@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import axios from "axios";
 import { redisClient } from "@/lib/redis";
 import { getUserId } from "@/lib/checkUser";
@@ -7,6 +6,7 @@ import { user } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { decrypt } from "@/utils/encrypt";
 import { setCompressedJson, getCompressedJson } from "@/lib/redis";
+import { functionWrapper } from "@/utils/wrapper";
 
 
 export async function GET() {
@@ -40,7 +40,7 @@ export async function GET() {
                     controller.close();
                 }
 
-                await redisClient.set(`feed:${userId}:status`, "PENDING")
+                await redisClient.set(`feed:${userId}:status`, "PENDING" , 'EX' , 60 * 60 * 8)
                 await send({ status: "PENDING" });
                 const [row] = await db
                     .select()
@@ -65,8 +65,10 @@ export async function GET() {
                 });
 
                 //compress and save in redis
-                await setCompressedJson(userId, feed);
-                await redisClient.set(`feed:${userId}:status`, "COMPLETED");
+                await Promise.all([
+                    functionWrapper(async() => {await setCompressedJson(userId, feed);}) , 
+                    functionWrapper(async() => {await redisClient.set(`feed:${userId}:status`, "COMPLETED" , 'EX' , 60 * 60 * 8);})
+                ])
 
                 await send({
                     feed,
