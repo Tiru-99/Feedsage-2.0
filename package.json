@@ -21,8 +21,11 @@
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
     "@prisma/client": "^7.2.0",
+    "axios": "^1.13.2",
     "better-auth": "^1.4.9",
     "drizzle-orm": "^0.45.1",
+    "ioredis": "^5.8.2",
+    "iron-session": "^8.0.4",
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3"

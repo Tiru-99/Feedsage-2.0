@@ -1,0 +1,93 @@
+import { NextRequest } from "next/server";
+import axios from "axios";
+import { redisClient } from "@/lib/redis";
+import { getUserId } from "@/lib/checkUser";
+import { db } from "@/lib/db";
+import { user } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { decrypt } from "@/utils/encrypt";
+import { setCompressedJson, getCompressedJson } from "@/lib/redis";
+
+
+export async function GET() {
+    const userId = await getUserId();
+
+    const stream = new ReadableStream({
+        async start(controller) {
+            async function send(data: any) {
+                controller.enqueue(JSON.stringify(data));
+            }
+
+            try {
+                const status = await redisClient.get(`feed:${userId}:status`);
+
+                if (status === "PENDING") {
+                    await send({
+                        message: "Generating feed",
+                        status: "PENDING",
+                        feed: []
+                    });
+                    return;
+                }
+
+                if (status === "COMPLETED") {
+                    const feed = await getCompressedJson(userId);
+                    await send({
+                        feed,
+                        message: "Feed generated successfully",
+                        status: "COMPLETED"
+                    })
+                    controller.close();
+                }
+
+                await redisClient.set(`feed:${userId}:status`, "PENDING")
+                await send({ status: "PENDING" });
+                const [row] = await db
+                    .select()
+                    .from(user)
+                    .where(eq(user.id, userId));
+
+                if (!row || !row.youtubeApiKey || !row.prompt) {
+                    await send({
+                        message: "Invalid data format",
+                        status: "ERROR"
+                    })
+                    controller.close();
+                    return;
+                }
+
+                const decryptedKey = await decrypt(row.youtubeApiKey);
+                const feed = await axios.get(`${process.env.WORKER_URL}/generate/feed`, {
+                    params: {
+                        apiKey: decryptedKey,
+                        prompt: row.prompt
+                    }
+                });
+
+                //compress and save in redis
+                await setCompressedJson(userId, feed);
+                await redisClient.set(`feed:${userId}:status`, "COMPLETED");
+
+                await send({
+                    feed,
+                    message: "Feed Generated Succesfully",
+                    status: "COMPLETED"
+                });
+                controller.close();
+            } catch (error) {
+                console.error("something went wrong while sse", error);
+                send({ status: "ERROR", message: "Feed generation failed" });
+                controller.close();
+            }
+        }
+    })
+
+    return new Response(stream, {
+        headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    });
+
+}

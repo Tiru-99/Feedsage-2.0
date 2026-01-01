@@ -4,8 +4,10 @@ export const user = pgTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
+  prompt: text("prompt"), 
   emailVerified: boolean("email_verified").notNull(),
   image: text("image"),
+  youtubeApiKey : text("youtubeApiKey"),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
 });
@@ -49,6 +51,7 @@ export const verification = pgTable("verification", {
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
 });
+
 
 // Export schema for Better Auth
 export const schema = {
