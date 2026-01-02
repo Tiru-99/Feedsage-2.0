@@ -20,8 +20,8 @@ export async function setCompressedJson(key: string, data: any) {
   await redisClient.set(`feed:${key}`, base64 , 'EX' , 60 * 60 * 8);
 }
 
-export async function getCompressedJson(key: string) {
-  const base64 = await redisClient.get(`feed:${key}`); 
+export async function getCompressedJson(userId: string) {
+  const base64 = await redisClient.get(`feed:${userId}`); 
   if (!base64) return null;
 
   const buffer = Buffer.from(base64, "base64");

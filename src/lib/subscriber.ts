@@ -5,6 +5,8 @@ export class Subscriber {
     private channel: string;
     private subClient: Redis;
     private isSubscribed = false; 
+    private messageHandler? : ( message : string , channel : string) => void ; 
+    private errorHandler? : (err : Error) => void
 
     constructor(channel: string, subClient: Redis) {
         this.channel = channel;
@@ -34,20 +36,26 @@ export class Subscriber {
             this.isSubscribed = true ; 
         });
 
-        const handler = (channel: string, message: string) => {
+        this.messageHandler = (channel: string, message: string) => {
             if (channel === this.channel) {
                 onMessage(message);
             }
         }
 
-        this.subClient.on("message", handler)
-        this.subClient.on("error", onError);
-        //cleanup
-        return () => {
-            this.subClient.off("message", handler);
-            this.subClient.off("error", onError);
-            this.subClient.unsubscribe(this.channel);
-            this.subClient.disconnect(); 
-        }
+        this.errorHandler = onError ; 
+        this.subClient.on("message", this.messageHandler)
+        this.subClient.on("error", this.errorHandler);
     }
+
+    public unsubscribe(){
+        if(this.messageHandler){
+            this.subClient.off("message" , this.messageHandler); 
+        }
+        if(this.errorHandler){
+            this.subClient.off("error", this.errorHandler);
+        }
+        this.subClient.unsubscribe(this.channel);
+        this.subClient.disconnect(); 
+    }
+
 }

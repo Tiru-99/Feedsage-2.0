@@ -9,6 +9,8 @@ import { setCompressedJson, getCompressedJson } from "@/lib/redis";
 import { functionWrapper } from "@/utils/wrapper";
 import { acquireLock } from "@/utils/lock";
 import { releaseLock } from "@/utils/unlock";
+import { Subscriber } from "@/lib/subscriber";
+
 
 //server sent event 
 export async function GET() {
@@ -17,12 +19,14 @@ export async function GET() {
     const stream = new ReadableStream({
         async start(controller) {
             async function send(data: any) {
-                controller.enqueue(JSON.stringify(data));
+                //browser compatible format
+                controller.enqueue(`data: ${JSON.stringify(data)}\n\n`);
             }
 
             try {
                 const status = await redisClient.get(`feed:${userId}:status`);
-                const channel = `feed:${userId}:events` ; 
+                const channel = `feed:${userId}:events`;
+                const redisKey = `feed:${userId}`; 
                 //add redis locking bro 
 
                 if (status === "COMPLETED") {
@@ -34,19 +38,51 @@ export async function GET() {
                     })
                     controller.close();
                 }
-                const lockKey = `feed:${userId}:lock`;
-                const result = await acquireLock(lockKey , '1' , 60 * 60)
 
-                if(!result){
+                const lockKey = `feed:${userId}:lock`;
+                const result = await acquireLock(lockKey, '1', 60 * 60)
+
+                //for the second request which comes for pending 
+                if (!result) {
                     //lock not aquired
                     await send({
-                        message : "Generating your feed",
-                        status : "PENDING"
+                        message: "Generating your feed",
+                        status: "PENDING"
                     });
 
                     const subClient = redisClient.duplicate();
-                    
-                    return ; 
+                    const subscriber = new Subscriber(channel, subClient);
+
+
+                    subscriber.subscribe(
+                        async (message: string) => {
+                            const event = JSON.parse(message);
+
+                            if (event === "COMPLETED") {
+                                const feed = await getCompressedJson(userId);
+
+                                await send({
+                                    status: "COMPLETED",
+                                    feed
+                                });
+                                //cleanup 
+                                subscriber.unsubscribe();
+                                controller.close();
+                            }
+                        },
+                        async (err: Error) => {
+                            console.error("Something went wrong while listening redis", err);
+                            await send({
+                                status: "ERROR",
+                                message: "Something went wrong"
+                            });
+                            //cleanup 
+                            subscriber.unsubscribe();
+                            controller.close();
+                        }
+                    )
+
+                    return;
                 }
 
                 await redisClient.set(`feed:${userId}:status`, "PENDING", 'EX', 60 * 60 * 8)
@@ -77,14 +113,21 @@ export async function GET() {
                 await Promise.all([
                     //publish the event
                     functionWrapper(async () => { await setCompressedJson(userId, feed); }),
-                    functionWrapper(async () => { await redisClient.set(`feed:${userId}:status`, "COMPLETED", 'EX', 60 * 60 * 8); })
+                    functionWrapper(async () => { await redisClient.set(`feed:${userId}:status`, "COMPLETED", 'EX', 60 * 60 * 8); }),
                 ])
+
+                //publish to the listener 
+                await redisClient.publish(
+                    channel,
+                    JSON.stringify("COMPLETED")
+                );
 
                 await send({
                     feed,
                     message: "Feed Generated Succesfully",
                     status: "COMPLETED"
                 });
+                await releaseLock(`feed:${userId}` , '1');
                 controller.close();
             } catch (error) {
                 console.error("something went wrong while sse", error);
