@@ -7,8 +7,10 @@ import { eq } from "drizzle-orm";
 import { decrypt } from "@/utils/encrypt";
 import { setCompressedJson, getCompressedJson } from "@/lib/redis";
 import { functionWrapper } from "@/utils/wrapper";
+import { acquireLock } from "@/utils/lock";
+import { releaseLock } from "@/utils/unlock";
 
-
+//server sent event 
 export async function GET() {
     const userId = await getUserId();
 
@@ -20,15 +22,8 @@ export async function GET() {
 
             try {
                 const status = await redisClient.get(`feed:${userId}:status`);
-
-                if (status === "PENDING") {
-                    await send({
-                        message: "Generating feed",
-                        status: "PENDING",
-                        feed: []
-                    });
-                    return;
-                }
+                const channel = `feed:${userId}:events` ; 
+                //add redis locking bro 
 
                 if (status === "COMPLETED") {
                     const feed = await getCompressedJson(userId);
@@ -39,8 +34,22 @@ export async function GET() {
                     })
                     controller.close();
                 }
+                const lockKey = `feed:${userId}:lock`;
+                const result = await acquireLock(lockKey , '1' , 60 * 60)
 
-                await redisClient.set(`feed:${userId}:status`, "PENDING" , 'EX' , 60 * 60 * 8)
+                if(!result){
+                    //lock not aquired
+                    await send({
+                        message : "Generating your feed",
+                        status : "PENDING"
+                    });
+
+                    const subClient = redisClient.duplicate();
+                    
+                    return ; 
+                }
+
+                await redisClient.set(`feed:${userId}:status`, "PENDING", 'EX', 60 * 60 * 8)
                 await send({ status: "PENDING" });
                 const [row] = await db
                     .select()
@@ -66,8 +75,9 @@ export async function GET() {
 
                 //compress and save in redis
                 await Promise.all([
-                    functionWrapper(async() => {await setCompressedJson(userId, feed);}) , 
-                    functionWrapper(async() => {await redisClient.set(`feed:${userId}:status`, "COMPLETED" , 'EX' , 60 * 60 * 8);})
+                    //publish the event
+                    functionWrapper(async () => { await setCompressedJson(userId, feed); }),
+                    functionWrapper(async () => { await redisClient.set(`feed:${userId}:status`, "COMPLETED", 'EX', 60 * 60 * 8); })
                 ])
 
                 await send({
