@@ -26,7 +26,6 @@ export async function GET() {
             try {
                 const status = await redisClient.get(`feed:${userId}:status`);
                 const channel = `feed:${userId}:events`;
-                const redisKey = `feed:${userId}`; 
                 //add redis locking bro 
 
                 if (status === "COMPLETED") {
@@ -53,7 +52,7 @@ export async function GET() {
                     const subClient = redisClient.duplicate();
                     const subscriber = new Subscriber(channel, subClient);
 
-
+                    //TODO : add a timeout
                     subscriber.subscribe(
                         async (message: string) => {
                             const event = JSON.parse(message);
@@ -102,16 +101,25 @@ export async function GET() {
                 }
 
                 const decryptedKey = await decrypt(row.youtubeApiKey);
-                const feed = await axios.get(`${process.env.WORKER_URL}/generate/feed`, {
+                const { data } = await axios.get(`${process.env.WORKER_URL}/generate/feed`, {
                     params: {
                         apiKey: decryptedKey,
                         prompt: row.prompt
                     }
                 });
 
+                const { success , feed , topFeed } = data ; 
+
+                if(success === false){
+                    send({
+                        status : "ERROR", 
+                        message : "internal server error"
+                    }); 
+                    controller.close(); 
+                }
+
                 //compress and save in redis
                 await Promise.all([
-                    //publish the event
                     functionWrapper(async () => { await setCompressedJson(userId, feed); }),
                     functionWrapper(async () => { await redisClient.set(`feed:${userId}:status`, "COMPLETED", 'EX', 60 * 60 * 8); }),
                 ])
@@ -124,10 +132,11 @@ export async function GET() {
 
                 await send({
                     feed,
+                    topFeed , 
                     message: "Feed Generated Succesfully",
                     status: "COMPLETED"
                 });
-                await releaseLock(`feed:${userId}` , '1');
+                await releaseLock(`feed:${userId}`, '1');
                 controller.close();
             } catch (error) {
                 console.error("something went wrong while sse", error);
