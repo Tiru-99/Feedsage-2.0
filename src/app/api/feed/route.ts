@@ -15,6 +15,9 @@ import { Subscriber } from "@/lib/subscriber";
 //server sent event 
 export async function GET() {
     const userId = await getUserId();
+    let lockIsAquired = false;
+    const lockKey = `feed:${userId}:lock`;
+
 
     const stream = new ReadableStream({
         async start(controller) {
@@ -23,10 +26,30 @@ export async function GET() {
                 controller.enqueue(`data: ${JSON.stringify(data)}\n\n`);
             }
 
+            async function cleanUp(lockKey: string) {
+                if (lockIsAquired === true) {
+                    await Promise.all([
+                        functionWrapper(async () => {
+                            await redisClient.set(`feed:${userId}:status`, "ERROR", 'EX', 60);
+                        }),
+                        functionWrapper(async () => {
+                            await releaseLock(lockKey, '1');
+                        })
+                    ]);
+                }
+            }
+
             try {
                 const status = await redisClient.get(`feed:${userId}:status`);
                 const channel = `feed:${userId}:events`;
                 //add redis locking bro 
+                if (status === "ERROR") {
+                    await send({
+                        message: "Error while generating feed please try again after 60s",
+                        status: "ERROR"
+                    });
+                    controller.close();
+                }
 
                 if (status === "COMPLETED") {
                     const feed = await getCompressedJson(userId);
@@ -38,8 +61,7 @@ export async function GET() {
                     controller.close();
                 }
 
-                const lockKey = `feed:${userId}:lock`;
-                const result = await acquireLock(lockKey, '1', 60 * 60)
+                const result = await acquireLock(lockKey, '1', 5*60)
 
                 //for the second request which comes for pending 
                 if (!result) {
@@ -83,19 +105,32 @@ export async function GET() {
 
                     return;
                 }
-
-                await redisClient.set(`feed:${userId}:status`, "PENDING", 'EX', 60 * 60 * 8)
+                lockIsAquired = true;
+                await redisClient.set(`feed:${userId}:status`, "PENDING", 'EX', 60 * 2)
                 await send({ status: "PENDING" });
                 const [row] = await db
                     .select()
                     .from(user)
                     .where(eq(user.id, userId));
 
-                if (!row || !row.youtubeApiKey || !row.prompt) {
+                if (!row || !row.youtubeApiKey) {
                     await send({
-                        message: "Invalid data format",
+                        message: "No youtube api key entered",
                         status: "ERROR"
                     })
+                    await cleanUp(lockKey)
+                    controller.close();
+                    return;
+                }
+
+                if (!row.prompt) {
+                    await send({
+                        message: "No prompt set",
+                        status: "ERROR"
+                    });
+
+                    await cleanUp(lockKey);
+
                     controller.close();
                     return;
                 }
@@ -108,14 +143,16 @@ export async function GET() {
                     }
                 });
 
-                const { success , feed , topFeed } = data ; 
+                const { success, feed, topFeed } = data;
 
-                if(success === false){
+                if (success === false) {
                     send({
-                        status : "ERROR", 
-                        message : "internal server error"
-                    }); 
-                    controller.close(); 
+                        status: "ERROR",
+                        message: "internal server error"
+                    });
+
+                    await cleanUp(lockKey);
+                    controller.close();
                 }
 
                 //compress and save in redis
@@ -132,7 +169,7 @@ export async function GET() {
 
                 await send({
                     feed,
-                    topFeed , 
+                    topFeed,
                     message: "Feed Generated Succesfully",
                     status: "COMPLETED"
                 });
@@ -141,6 +178,7 @@ export async function GET() {
             } catch (error) {
                 console.error("something went wrong while sse", error);
                 send({ status: "ERROR", message: "Feed generation failed" });
+                await cleanUp(lockKey); 
                 controller.close();
             }
         }
