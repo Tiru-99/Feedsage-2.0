@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
+import { formatViews } from "@/utils/format";
 
 export interface VideoProps {
     id: string;
@@ -45,7 +46,7 @@ export default function VideoCard({ video }: { video: VideoProps }) {
                         <CheckCircle2 className="w-3 h-3 fill-gray-500 text-black" />
                     </Link>
                     <div className="text-sm text-gray-400 flex items-center">
-                        <span>{video.views} views</span>
+                        <span>{formatViews(video.views)} views</span>
                         <span className="text-xs mx-1">•</span>
                         <span>{video.postedAt}</span>
                     </div>

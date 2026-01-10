@@ -3,6 +3,7 @@
 import PageLayout from "@/components/PageLayout";
 import FeedGrid from "@/components/FeedGrid";
 import { VideoProps } from "@/components/VideoCard";
+import { PromptSubmitProvider } from "@/context/PromptSubmitContext";
 
 const MOCK_VIDEOS: VideoProps[] = [
   {
@@ -129,10 +130,12 @@ const MOCK_VIDEOS: VideoProps[] = [
 
 export default function Home() {
   return (
-    <PageLayout>
-      <div className="max-w-7xl mx-auto w-full">
-        <FeedGrid videos={MOCK_VIDEOS} />
-      </div>
-    </PageLayout>
+    <PromptSubmitProvider>
+      <PageLayout>
+        <div className="max-w-7xl mx-auto w-full">
+          <FeedGrid videos={MOCK_VIDEOS} />
+        </div>
+      </PageLayout>
+    </PromptSubmitProvider>
   );
 }

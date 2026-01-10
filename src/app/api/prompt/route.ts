@@ -5,7 +5,7 @@ import { user } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { redisClient } from "@/lib/redis";
 import { functionWrapper } from "@/utils/wrapper";
-
+import { buildFeed } from "@/lib/buildFeed";
 
 export async function POST(req: NextRequest) {
     const userId = await getUserId();
@@ -27,6 +27,10 @@ export async function POST(req: NextRequest) {
             functionWrapper(() => redisClient.del(`feed:${userId}`)),
             functionWrapper(() => redisClient.del(`feed:${userId}:status`)),
         ]);
+        //background async job
+        buildFeed(userId).catch((err) => {
+            console.log("Feed build failed" , err); 
+        });
 
         return NextResponse.json({
             message: "Successfully stored the prompt",

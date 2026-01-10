@@ -32,6 +32,7 @@ export default function ApiKeyModal({ isOpen, onClose }: ApiKeyModalProps) {
             const { success, message } = response.data;
             alert(message);
             console.log("Successfully saved the api key bro", success);
+
             onClose();
         } catch (err) {
             const error = err as AxiosError<{ message: string }>;

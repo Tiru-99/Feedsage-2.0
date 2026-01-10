@@ -3,6 +3,7 @@
 import { Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import axios, { AxiosError } from "axios";
+import { usePromptSubmit } from "@/context/PromptSubmitContext";
 
 interface CreateFeedModalProps {
     isOpen: boolean;
@@ -14,7 +15,8 @@ export default function CreateFeedModal({
     onClose,
 }: CreateFeedModalProps) {
     const [prompt, setPrompt] = useState<string>("");
-
+    const [ promptChanged , setPromptChanged] = useState<number>(0); 
+    const { notifyPromptSubmit } = usePromptSubmit(); 
     const handleSubmit = async () => {
         if (!prompt.trim()) {
             alert("Please enter a prompt");
@@ -29,7 +31,9 @@ export default function CreateFeedModal({
 
             const { message } = response.data;
             alert(message);
+            notifyPromptSubmit(); 
             onClose();
+            
         } catch (err) {
             const error = err as AxiosError<{ message: string }>;
 
