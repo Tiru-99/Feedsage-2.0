@@ -6,7 +6,7 @@ import { getCompressedJson, redisClient } from "@/lib/redis";
 import { Subscriber } from "@/lib/subscriber";
 
 
-export default async function GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
     const userId = await getUserId();
 
     const { searchParams } = new URL(req.url);
@@ -17,14 +17,14 @@ export default async function GET(req: NextRequest) {
         //send this to the api to embedd 
         const { data } = await axios.post(`${process.env.WORKER_URL}/generate/embedding`, {
             title,
-            description
+            description  : description ?? ""
         });
 
         const { embeddings } = data;
-
+        
         let videos;
         const status = await redisClient.get(`feed:${userId}:status`);
-        videos = await getCompressedJson(`feed:${userId}`);
+        videos = await getCompressedJson(userId);
 
         if (!status && (!videos || videos.length === 0)) {
             //feed expired
@@ -83,13 +83,14 @@ export default async function GET(req: NextRequest) {
             (a: any, b: any) => b.similarityScore - a.similarityScore
         );
 
-        const top10 = recommendations.slice(0, 10);
+        const top10 = recommendations.slice(0, 12);
 
         return NextResponse.json({
             success: true,
-            data: top10
+            videos: top10
         });
     } catch (error) {
+        console.log("Error in getting recommendations" , error); 
         return NextResponse.json({
             message: "Something went wrong while recommendation",
             success: false,

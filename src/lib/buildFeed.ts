@@ -11,7 +11,7 @@ import { releaseLock } from "@/utils/unlock";
 
 export async function buildFeed(userId: string) {
   const lockKey = `feed:${userId}:lock`;
-  const channel = `feed:${userId}:events`;
+  let channel = `feed:${userId}:events`;
 
   let lockAcquired = false;
 
@@ -25,25 +25,12 @@ export async function buildFeed(userId: string) {
 
     lockAcquired = true;
 
-    await redisClient.set(
-      `feed:${userId}:status`,
-      "PENDING",
-      "EX",
-      60 * 10
-    );
+    await redisClient.set(`feed:${userId}:status`, "PENDING", "EX", 60 * 10);
 
-    const [row] = await db
-      .select()
-      .from(user)
-      .where(eq(user.id, userId));
+    const [row] = await db.select().from(user).where(eq(user.id, userId));
 
     if (!row || !row.youtubeApiKey || !row.prompt) {
-      await redisClient.set(
-        `feed:${userId}:status`,
-        "ERROR",
-        "EX",
-        60
-      );
+      await redisClient.set(`feed:${userId}:status`, "ERROR", "EX", 60);
       return;
     }
 
@@ -56,18 +43,22 @@ export async function buildFeed(userId: string) {
           apiKey: decryptedKey,
           prompt: row.prompt,
         },
-      }
+      },
     );
 
-    const { success, feed } = data;
+    const { success, feed, errType } = data;
+
+    console.log("The generated feed length is ", feed.length);
+
+    if (!success && errType === "NSFW") {
+      await redisClient.publish(channel , JSON.stringify("NSFW"));
+      await redisClient.set(`feed:${userId}:status`, "NSFW", "EX", 2 * 60);
+      return;
+    }
 
     if (!success) {
-      await redisClient.set(
-        `feed:${userId}:status`,
-        "ERROR",
-        "EX",
-        60
-      );
+      await redisClient.publish(channel , JSON.stringify('ERROR')); 
+      await redisClient.set(`feed:${userId}:status`, "ERROR", "EX", 60);
       return;
     }
 
@@ -81,24 +72,37 @@ export async function buildFeed(userId: string) {
           `feed:${userId}:status`,
           "COMPLETED",
           "EX",
-          60 * 60 * 8
+          60 * 60 * 8,
         );
       }),
     ]);
 
     // notify SSE listeners
-    await redisClient.publish(
-      channel,
-      JSON.stringify("COMPLETED")
-    );
-  } catch (err) {
+    await redisClient.publish(channel, JSON.stringify("COMPLETED"));
+  } catch (err : any) {
     console.error("buildFeed failed:", err);
-    await redisClient.set(
-      `feed:${userId}:status`,
-      "ERROR",
-      "EX",
-      60
-    );
+   
+     const statusCode =
+       err?.response?.status ??
+       err?.statusCode ??
+       err?.status ??
+       500;
+   
+     let redisStatus: "YOUTUBE_RATE_LIMIT" | "NSFW" | "ERROR" = "ERROR";
+   
+     if (statusCode === 429) {
+       redisStatus = "YOUTUBE_RATE_LIMIT";
+     } else if (statusCode === 422) {
+       redisStatus = "NSFW";
+     }
+   
+     console.log("Setting redis status:", redisStatus);
+   
+     await Promise.all([
+       redisClient.publish(channel, JSON.stringify(redisStatus)),
+       redisClient.set(`feed:${userId}:status`, redisStatus, "EX", 60),
+     ]);
+     
   } finally {
     if (lockAcquired) {
       await releaseLock(lockKey, "1");

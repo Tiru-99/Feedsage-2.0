@@ -4,9 +4,11 @@ import { getUserId } from "@/lib/checkUser";
 import { getCompressedJson } from "@/lib/redis";
 import { Subscriber } from "@/lib/subscriber";
 
-export async function GET( req : NextRequest) {
+export async function GET(req: NextRequest) {
   const userId = await getUserId();
   const channel = `feed:${userId}:events`;
+
+  let closed = false;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -15,6 +17,8 @@ export async function GET( req : NextRequest) {
       };
 
       const cleanup = async (subscriber?: Subscriber) => {
+        if (closed === true) return;
+        closed = true;
         try {
           subscriber?.unsubscribe();
         } catch {}
@@ -22,9 +26,8 @@ export async function GET( req : NextRequest) {
       };
 
       try {
-        // 1️⃣ check current status
         const status = await redisClient.get(`feed:${userId}:status`);
-
+        console.log("The redis status is ", status);
         // completed already → send immediately
         if (status === "COMPLETED") {
           const feed = await getCompressedJson(userId);
@@ -32,7 +35,24 @@ export async function GET( req : NextRequest) {
             status: "COMPLETED",
             feed,
           });
-          return cleanup();
+
+          return await cleanup();
+        }
+
+        if (status === "NSFW") {
+          send({
+            status: "NSFW",
+            message: "NSFW , please enter proper prompt",
+          });
+          return await cleanup();
+        }
+        
+        if(status === "YOUTUBE_RATE_LIMIT"){
+          send({
+            status : "YOUTUBE_RATE_LIMIT",
+            message : "Youtube api limit exceeded consider changing api key"
+          }); 
+          return await cleanup(); 
         }
 
         // errored
@@ -41,7 +61,16 @@ export async function GET( req : NextRequest) {
             status: "ERROR",
             message: "Feed generation failed. Please retry.",
           });
-          return cleanup();
+          return await cleanup();
+        }
+
+        //feed expired
+        if (!status) {
+          send({
+            message: "Feed expired",
+            status: "EXPIRED",
+          });
+          return await cleanup();
         }
 
         // pending or unknown → listen
@@ -60,7 +89,14 @@ export async function GET( req : NextRequest) {
                 status: "COMPLETED",
                 feed,
               });
-              await cleanup(subscriber);
+              return await cleanup(subscriber);
+            }
+
+            if (event === "NSFW") {
+              send({
+                status : "NSFW",
+                message : "NSFW Message detected"
+              })
             }
 
             if (event === "ERROR") {
@@ -68,7 +104,7 @@ export async function GET( req : NextRequest) {
                 status: "ERROR",
                 message: "Feed generation failed.",
               });
-              await cleanup(subscriber);
+              return await cleanup(subscriber);
             }
           },
           async (err: Error) => {
@@ -77,14 +113,13 @@ export async function GET( req : NextRequest) {
               status: "ERROR",
               message: "Something went wrong.",
             });
-            await cleanup(subscriber);
-          }
+            return await cleanup(subscriber);
+          },
         );
 
         // handle client disconnect
         req.signal.addEventListener("abort", async () => {
           await cleanup(subscriber);
-          controller.close(); 
         });
       } catch (err) {
         console.error("SSE route failed:", err);
@@ -101,7 +136,7 @@ export async function GET( req : NextRequest) {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
+      Connection: "keep-alive",
     },
   });
 }
