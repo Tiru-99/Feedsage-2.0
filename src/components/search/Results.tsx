@@ -43,16 +43,28 @@ export default function Results() {
           setShowFocusWarning(true);
           return;
         }
-        
-        if(code === "YOUTUBE_RATE_LIMIT"){
+
+        if (code === "YOUTUBE_RATE_LIMIT") {
           toast.error("Youtube rate limit over !!");
-          return ; 
+          return;
         }
-        
-        if( code === "GEMINI_RATE_LIMIT"){
+
+        if (code === "YT_NO_API_KEY") {
+          toast.error("No youtube api key found !!");
+          return;
+        }
+
+        if (code === "NO_PROMPT") {
+          toast.error("No prompt found , please enter a prompt");
+          return;
+        }
+
+        if (code === "GEMINI_RATE_LIMIT") {
           console.log("Gemini rate limit over !!!");
-          toast.error("Failed to fetch results , this is our fault , please contact the developer")
-          return; 
+          toast.error(
+            "Failed to fetch results , this is our fault , please contact the developer",
+          );
+          return;
         }
 
         console.error("Something went wrong while fetching data", err);
@@ -65,7 +77,6 @@ export default function Results() {
 
   return (
     <>
-
       {showFocusWarning && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center px-4">
           <div className="max-w-md w-full bg-[#181818] rounded-xl p-6 text-center space-y-4">

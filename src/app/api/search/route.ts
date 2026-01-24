@@ -22,33 +22,45 @@ export async function GET(req: NextRequest) {
   if (!search) {
     return NextResponse.json(
       { success: false, message: "Search query missing" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
   try {
-    const [row] = await db
-      .select()
-      .from(user)
-      .where(eq(user.id, userId));
+    const [row] = await db.select().from(user).where(eq(user.id, userId));
 
     if (!row?.youtubeApiKey) {
+      console.log("No youtube api key found mf....!");
       return NextResponse.json(
         { success: false, message: "YouTube API key not found" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
     if (!row?.prompt) {
+      console.log("No prompt found in the database bro !! ");
       return NextResponse.json(
         {
           success: false,
           message: "Please enter a prompt to get started",
+          code: "NO_PROMPT",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
+    const API_KEY = await decrypt(row.youtubeApiKey);
+
+    if (!API_KEY || typeof API_KEY !== "string" || API_KEY === "{}") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Youtube api key not found !!",
+          code: "YT_NO_API_KEY",
+        },
+        { status: 400 },
+      );
+    }
     // intent check
     const intent = await getIntent(model, search, row.prompt);
 
@@ -59,11 +71,9 @@ export async function GET(req: NextRequest) {
           message: "Prompt and search context doesn't match",
           code: "INTENT_MISMATCH",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
-
-    const API_KEY = await decrypt(row.youtubeApiKey);
 
     // SEARCH API
     const searchRes = await axios.get<YouTubeSearchResponse>(
@@ -77,21 +87,18 @@ export async function GET(req: NextRequest) {
           maxResults: 40,
           safeSearch: "strict",
         },
-      }
+      },
     );
 
     const searchItems = searchRes.data.items;
 
     if (!searchItems.length) {
-      return NextResponse.json(
-        { success: true, results: [] },
-        { status: 200 }
-      );
+      return NextResponse.json({ success: true, results: [] }, { status: 200 });
     }
 
-    const videoIds = searchItems.map(i => i.id.videoId).join(",");
+    const videoIds = searchItems.map((i) => i.id.videoId).join(",");
     const channelIds = [
-      ...new Set(searchItems.map(i => i.snippet.channelId)),
+      ...new Set(searchItems.map((i) => i.snippet.channelId)),
     ].join(",");
 
     // VIDEOS API (duration + views)
@@ -103,7 +110,7 @@ export async function GET(req: NextRequest) {
           part: "contentDetails,statistics",
           id: videoIds,
         },
-      }
+      },
     );
 
     // CHANNELS API
@@ -115,33 +122,33 @@ export async function GET(req: NextRequest) {
           part: "snippet,statistics",
           id: channelIds,
         },
-      }
+      },
     );
 
     // lookup maps
     const videoMap = new Map(
-      videoRes.data.items.map(v => [
+      videoRes.data.items.map((v) => [
         v.id,
         {
           duration: v.contentDetails.duration,
           views: v.statistics.viewCount,
         },
-      ])
+      ]),
     );
 
     const channelMap = new Map(
-      channelRes.data.items.map(c => [
+      channelRes.data.items.map((c) => [
         c.id,
         {
           avatar: c.snippet.thumbnails.default.url,
           subscribers: c.statistics.subscriberCount,
         },
-      ])
+      ]),
     );
 
     // FILTER SHORTS (< 90s) + MERGE
     const results = searchItems
-      .filter(item => {
+      .filter((item) => {
         const video = videoMap.get(item.id.videoId);
         if (!video?.duration) return false;
 
@@ -150,7 +157,7 @@ export async function GET(req: NextRequest) {
         // remove YouTube Shorts
         return durationInSeconds >= 90;
       })
-      .map(item => {
+      .map((item) => {
         const video = videoMap.get(item.id.videoId)!;
         const channel = channelMap.get(item.snippet.channelId);
 
@@ -168,75 +175,72 @@ export async function GET(req: NextRequest) {
         };
       });
 
-    return NextResponse.json(
-      { success: true, results },
-      { status: 200 }
-    );
-  } catch (error : any ) {
+    return NextResponse.json({ success: true, results }, { status: 200 });
+  } catch (error: any) {
     console.error("API error:", error);
-      //catch youtube api error 
-      if (axios.isAxiosError(error)) {
-        const status = error.response?.status;
-    
-        if (status === 429) {
-          return NextResponse.json(
-            {
-              success: false,
-              code: "YOUTUBE_RATE_LIMIT",
-              message: "YouTube API rate limit exceeded",
-            },
-            { status: 429 }
-          );
-        }
-    
+    //catch youtube api error
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+
+      if (status === 429) {
         return NextResponse.json(
           {
             success: false,
-            code: "YOUTUBE_ERROR",
-            message: "YouTube API failed",
+            code: "YOUTUBE_RATE_LIMIT",
+            message: "YouTube API rate limit exceeded",
           },
-          { status: status ?? 500 }
+          { status: 429 },
         );
       }
-    
-      // catch gemini error 
-      if (
-        error?.name === "GoogleGenerativeAIError" ||
-        error?.message?.includes("generativelanguage.googleapis.com")
-      ) {
-        if (
-          error.message.includes("429") ||
-          error.message.toLowerCase().includes("quota")
-        ) {
-          return NextResponse.json(
-            {
-              success: false,
-              code: "GEMINI_RATE_LIMIT",
-              message: "AI quota exceeded. Try again shortly.",
-            },
-            { status: 429 }
-          );
-        }
-    
-        return NextResponse.json(
-          {
-            success: false,
-            code: "GEMINI_ERROR",
-            message: "AI service failed",
-          },
-          { status: 502 }
-        );
-      }
-    
-      //fallback
+
       return NextResponse.json(
         {
           success: false,
-          error: "INTERNAL_ERROR",
-          message: "Something went wrong",
+          code: "YOUTUBE_ERROR",
+          message: "YouTube API failed",
         },
-        { status: 500 }
+        { status: status ?? 500 },
       );
+    }
+
+    // catch gemini error
+    if (
+      error?.name === "GoogleGenerativeAIError" ||
+      error?.message?.includes("generativelanguage.googleapis.com")
+    ) {
+      if (
+        error.message.includes("429") ||
+        error.message.toLowerCase().includes("quota")
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "GEMINI_RATE_LIMIT",
+            message: "AI quota exceeded. Try again shortly.",
+          },
+          { status: 429 },
+        );
+      }
+
+      return NextResponse.json(
+        {
+          success: false,
+          code: "GEMINI_ERROR",
+          message: "AI service failed",
+        },
+        { status: 502 },
+      );
+    }
+
+    //fallback
+    return NextResponse.json(
+      {
+        success: false,
+        error: "INTERNAL_ERROR",
+        message: "Something went wrong",
+      },
+      { status: 500 },
+    );
   }
 }
 
@@ -255,9 +259,7 @@ function isoDurationToSeconds(iso: string): number {
 }
 
 export function formatYouTubeDuration(isoDuration: string): string {
-  const match = isoDuration.match(
-    /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/
-  );
+  const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
 
   if (!match) return "0:00";
 
@@ -267,7 +269,7 @@ export function formatYouTubeDuration(isoDuration: string): string {
 
   if (hours > 0) {
     return `${hours}:${String(minutes).padStart(2, "0")}:${String(
-      seconds
+      seconds,
     ).padStart(2, "0")}`;
   }
 

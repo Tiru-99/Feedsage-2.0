@@ -6,7 +6,7 @@ import VideoCardSkeleton from "../skeletons/VideoCardSkeleton";
 import { VideoProps } from "@/utils/types";
 import { usePromptSubmit } from "@/context/PromptSubmitContext";
 import ErrorDisplay from "@/components/ui/ErrorDisplay";
-import { AlertCircle, Ban, Clock } from "lucide-react";
+import { AlertCircle, Ban, Clock, KeyRound } from "lucide-react";
 import Link from "next/link";
 
 type FeedStatus =
@@ -15,6 +15,7 @@ type FeedStatus =
   | "ERROR"
   | "EXPIRED"
   | "NSFW"
+  | "NO_API_KEY"
   | "YOUTUBE_RATE_LIMIT";
 
 interface FeedItem {
@@ -102,6 +103,13 @@ export default function FeedGrid() {
             es.close();
             break;
 
+          case "NO_API_KEY":
+            setFeedStatus("NO_API_KEY");
+            setIsLoading(false);
+            setMessage("YouTube API key not found");
+            es.close();
+            break;
+
           case "ERROR":
             setFeedStatus("ERROR");
             setIsLoading(false);
@@ -152,7 +160,6 @@ export default function FeedGrid() {
       }));
   }, [feed]);
 
-
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-6 pt-2 pb-10">
@@ -162,7 +169,6 @@ export default function FeedGrid() {
       </div>
     );
   }
-
 
   if (feedStatus === "NSFW") {
     return (
@@ -174,17 +180,25 @@ export default function FeedGrid() {
     );
   }
 
-  
-  if (feedStatus === "EXPIRED") {
+  if (feedStatus === "NO_API_KEY") {
     return (
       <ErrorDisplay
-        title="Feed Expired"
-        message="This feed has expired. Open the prompt modal and generate a new feed."
-        icon={<Clock className="w-8 h-8 text-orange-500" />}
+        title="No Youtube api key found"
+        message="Please enter the youtube api key from the settings icon on the navbar"
+        icon={<KeyRound className="w-8 h-8 text-red-500" />}
       />
     );
   }
 
+  if (feedStatus === "EXPIRED") {
+    return (
+      <ErrorDisplay
+        title="Feed doesn't exist"
+        message="This feed has expired or doesn't exist. Open the prompt modal and generate a new feed."
+        icon={<Clock className="w-8 h-8 text-orange-500" />}
+      />
+    );
+  }
 
   if (feedStatus === "ERROR") {
     return (
@@ -196,11 +210,7 @@ export default function FeedGrid() {
     );
   }
 
-  if (
-    feedStatus === "COMPLETED" &&
-    !isLoading &&
-    rankedVideos.length === 0
-  ) {
+  if (feedStatus === "COMPLETED" && !isLoading && rankedVideos.length === 0) {
     return (
       <ErrorDisplay
         title="No Videos Found"
@@ -209,7 +219,6 @@ export default function FeedGrid() {
       />
     );
   }
-
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-6 pt-2 pb-10">

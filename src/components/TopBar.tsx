@@ -1,12 +1,7 @@
 "use client";
-import {
-  Search,
-  MonitorPlay,
-  Sparkles,
-  Settings,
-} from "lucide-react";
+import { Search, MonitorPlay, Sparkles, Settings } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import UserProfile from "./UserProfile";
 
@@ -22,16 +17,32 @@ export default function TopBar({
   const [query, setQuery] = useState<string>("");
   const router = useRouter();
   const searchParams = useSearchParams();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleSubmit = () => {
     console.log("The button got pressed");
     if (!query.trim()) return;
-    router.push(`/search?q=${encodeURIComponent(query)}`);
+
+    // clear previous intent
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    debounceRef.current = setTimeout(() => {
+      router.push(`/search?q=${encodeURIComponent(query)}`);
+    }, 800);
   };
 
+  //debounce
   useEffect(() => {
     const q = searchParams.get("q");
     if (q) setQuery(q);
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
   }, [searchParams]);
 
   return (
@@ -46,7 +57,7 @@ export default function TopBar({
           </span>
         </Link>
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/home")}
           className="hidden md:flex items-center justify-center px-4 py-2 hover:bg-[#272727] rounded-full transition-colors ml-4 text-sm font-medium"
         >
           Home
@@ -94,7 +105,7 @@ export default function TopBar({
         >
           <Settings className="w-6 h-6" />
         </button>
-       
+
         <UserProfile></UserProfile>
       </div>
     </div>

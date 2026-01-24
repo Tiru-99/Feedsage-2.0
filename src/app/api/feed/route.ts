@@ -46,13 +46,13 @@ export async function GET(req: NextRequest) {
           });
           return await cleanup();
         }
-        
-        if(status === "YOUTUBE_RATE_LIMIT"){
+
+        if (status === "YOUTUBE_RATE_LIMIT") {
           send({
-            status : "YOUTUBE_RATE_LIMIT",
-            message : "Youtube api limit exceeded consider changing api key"
-          }); 
-          return await cleanup(); 
+            status: "YOUTUBE_RATE_LIMIT",
+            message: "Youtube api limit exceeded consider changing api key",
+          });
+          return await cleanup();
         }
 
         // errored
@@ -64,6 +64,12 @@ export async function GET(req: NextRequest) {
           return await cleanup();
         }
 
+        if (status === "NO_API_KEY") {
+          send({
+            status: "NO_API_KEY",
+            message: "No youtube api key found",
+          });
+        }
         //feed expired
         if (!status) {
           send({
@@ -94,9 +100,9 @@ export async function GET(req: NextRequest) {
 
             if (event === "NSFW") {
               send({
-                status : "NSFW",
-                message : "NSFW Message detected"
-              })
+                status: "NSFW",
+                message: "NSFW Message detected",
+              });
             }
 
             if (event === "ERROR") {

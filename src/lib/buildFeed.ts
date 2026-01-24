@@ -11,7 +11,7 @@ import { releaseLock } from "@/utils/unlock";
 
 export async function buildFeed(userId: string) {
   const lockKey = `feed:${userId}:lock`;
-  let channel = `feed:${userId}:events`;
+  const channel = `feed:${userId}:events`;
 
   let lockAcquired = false;
 
@@ -35,6 +35,7 @@ export async function buildFeed(userId: string) {
     }
 
     const decryptedKey = await decrypt(row.youtubeApiKey);
+    console.log("the decryptedKey is ", decryptedKey);
 
     const { data } = await axios.get(
       `${process.env.WORKER_URL}/generate/feed`,
@@ -51,13 +52,13 @@ export async function buildFeed(userId: string) {
     console.log("The generated feed length is ", feed.length);
 
     if (!success && errType === "NSFW") {
-      await redisClient.publish(channel , JSON.stringify("NSFW"));
+      await redisClient.publish(channel, JSON.stringify("NSFW"));
       await redisClient.set(`feed:${userId}:status`, "NSFW", "EX", 2 * 60);
       return;
     }
 
     if (!success) {
-      await redisClient.publish(channel , JSON.stringify('ERROR')); 
+      await redisClient.publish(channel, JSON.stringify("ERROR"));
       await redisClient.set(`feed:${userId}:status`, "ERROR", "EX", 60);
       return;
     }
@@ -79,30 +80,29 @@ export async function buildFeed(userId: string) {
 
     // notify SSE listeners
     await redisClient.publish(channel, JSON.stringify("COMPLETED"));
-  } catch (err : any) {
+  } catch (err: any) {
     console.error("buildFeed failed:", err);
-   
-     const statusCode =
-       err?.response?.status ??
-       err?.statusCode ??
-       err?.status ??
-       500;
-   
-     let redisStatus: "YOUTUBE_RATE_LIMIT" | "NSFW" | "ERROR" = "ERROR";
-   
-     if (statusCode === 429) {
-       redisStatus = "YOUTUBE_RATE_LIMIT";
-     } else if (statusCode === 422) {
-       redisStatus = "NSFW";
-     }
-   
-     console.log("Setting redis status:", redisStatus);
-   
-     await Promise.all([
-       redisClient.publish(channel, JSON.stringify(redisStatus)),
-       redisClient.set(`feed:${userId}:status`, redisStatus, "EX", 60),
-     ]);
-     
+
+    const statusCode =
+      err?.response?.status ?? err?.statusCode ?? err?.status ?? 500;
+
+    let redisStatus: "YOUTUBE_RATE_LIMIT" | "NSFW" | "ERROR" | "NO_API_KEY" =
+      "ERROR";
+
+    if (statusCode === 429) {
+      redisStatus = "YOUTUBE_RATE_LIMIT";
+    } else if (statusCode === 422) {
+      redisStatus = "NSFW";
+    } else if (statusCode === 400) {
+      redisStatus = "NO_API_KEY";
+    }
+
+    console.log("Setting redis status:", redisStatus);
+
+    await Promise.all([
+      redisClient.publish(channel, JSON.stringify(redisStatus)),
+      redisClient.set(`feed:${userId}:status`, redisStatus, "EX", 60),
+    ]);
   } finally {
     if (lockAcquired) {
       await releaseLock(lockKey, "1");

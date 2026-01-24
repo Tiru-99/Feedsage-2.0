@@ -48,7 +48,7 @@ export default function Signin() {
         <div className="p-8 md:p-12">
           <div className="text-center mb-10">
             <h1 className="font-serif text-4xl text-white mb-3 tracking-tight">
-              Minder
+              Feedsage
             </h1>
             <p className="text-white/40 text-sm font-light tracking-wide">
               Welcome back, please sign in to continue

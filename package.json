@@ -25,6 +25,7 @@
     "axios": "^1.13.2",
     "better-auth": "^1.4.9",
     "drizzle-orm": "^0.45.1",
+    "framer-motion": "^12.29.0",
     "ioredis": "^5.8.2",
     "iron-session": "^8.0.4",
     "lucide-react": "^0.562.0",
