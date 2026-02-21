@@ -11,7 +11,7 @@ interface CreateFeedModalProps {
   onClose: () => void;
 }
 
-const MAX_WORDS = 50;
+const MAX_CHARS = 200;
 
 export default function CreateFeedModal({
   isOpen,
@@ -23,15 +23,13 @@ export default function CreateFeedModal({
   const { toast } = useToast();
 
   const handleSubmit = async () => {
-    const wordCount = prompt.trim().split(/\s+/).filter(Boolean).length;
-
     if (!prompt.trim()) {
       toast.error("Please enter a prompt");
       return;
     }
 
-    if (wordCount > MAX_WORDS) {
-      toast.error(`Prompt cannot exceed ${MAX_WORDS} words`);
+    if (prompt.length > MAX_CHARS) {
+      toast.error(`Prompt cannot exceed ${MAX_CHARS} characters`);
       return;
     }
 
@@ -40,7 +38,7 @@ export default function CreateFeedModal({
 
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_APP_URL}/api/prompt`,
-        { prompt }
+        { prompt },
       );
 
       toast.success(response.data.message);
@@ -51,7 +49,7 @@ export default function CreateFeedModal({
       const error = err as AxiosError<{ message: string }>;
       toast.error(
         error.response?.data?.message ??
-        "Something went wrong. Please try again."
+          "Something went wrong. Please try again.",
       );
     } finally {
       setLoading(false);
@@ -63,7 +61,6 @@ export default function CreateFeedModal({
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="w-full max-w-xl rounded-2xl bg-[#181818] border border-neutral-800 shadow-2xl">
-
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800">
           <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
@@ -78,7 +75,6 @@ export default function CreateFeedModal({
           </button>
         </div>
 
-        {/* Body */}
         <div className="px-6 py-5">
           <label className="block text-sm font-medium text-neutral-300 mb-2">
             What do you want to watch?
@@ -86,7 +82,12 @@ export default function CreateFeedModal({
 
           <textarea
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={(e) => {
+              if (e.target.value.length <= MAX_CHARS) {
+                setPrompt(e.target.value);
+              }
+            }}
+            maxLength={MAX_CHARS}
             rows={4}
             placeholder="Indie game dev logs, React tutorials, system design breakdowns..."
             className="
@@ -95,11 +96,15 @@ export default function CreateFeedModal({
               px-4 py-3 text-sm text-white
               placeholder-neutral-500
               focus:outline-none focus:ring-2 focus:ring-purple-500
+              overflow-y-auto
             "
           />
+
+          <div className="mt-2 text-xs text-neutral-500 text-right">
+            {prompt.length}/{MAX_CHARS}
+          </div>
         </div>
 
-        {/* Actions */}
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-neutral-800 bg-[#121212]">
           <button
             onClick={onClose}

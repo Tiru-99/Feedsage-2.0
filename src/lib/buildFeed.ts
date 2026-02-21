@@ -9,7 +9,11 @@ import { functionWrapper } from "@/utils/wrapper";
 import { acquireLock } from "@/utils/lock";
 import { releaseLock } from "@/utils/unlock";
 
-export async function buildFeed(userId: string) {
+export async function buildFeed(
+  userId: string,
+  apiKey: string,
+  prompt: string,
+) {
   const lockKey = `feed:${userId}:lock`;
   const channel = `feed:${userId}:events`;
 
@@ -26,15 +30,8 @@ export async function buildFeed(userId: string) {
     lockAcquired = true;
 
     await redisClient.set(`feed:${userId}:status`, "PENDING", "EX", 60 * 10);
-
-    const [row] = await db.select().from(user).where(eq(user.id, userId));
-
-    if (!row || !row.youtubeApiKey || !row.prompt) {
-      await redisClient.set(`feed:${userId}:status`, "ERROR", "EX", 60);
-      return;
-    }
-
-    const decryptedKey = await decrypt(row.youtubeApiKey);
+    console.log("the apikey is ", apiKey);
+    const decryptedKey = await decrypt(apiKey);
     console.log("the decryptedKey is ", decryptedKey);
 
     const { data } = await axios.get(
@@ -42,7 +39,7 @@ export async function buildFeed(userId: string) {
       {
         params: {
           apiKey: decryptedKey,
-          prompt: row.prompt,
+          prompt: prompt,
         },
       },
     );

@@ -8,6 +8,7 @@ import { usePromptSubmit } from "@/context/PromptSubmitContext";
 import ErrorDisplay from "@/components/ui/ErrorDisplay";
 import { AlertCircle, Ban, Clock, KeyRound } from "lucide-react";
 import Link from "next/link";
+import { useToast } from "../ui/Toast";
 
 type FeedStatus =
   | "PENDING"
@@ -52,6 +53,7 @@ export default function FeedGrid() {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [feedStatus, setFeedStatus] = useState<FeedStatus>("PENDING");
   const { promptChanged } = usePromptSubmit();
+  const { toast } = useToast();
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -78,7 +80,8 @@ export default function FeedGrid() {
             setFeedStatus("COMPLETED");
             setIsLoading(false);
             setFeed(data.feed ?? []);
-            setMessage("Feed ready");
+            setMessage("Your feed is ready!!");
+            toast.success("Your feed is ready !!");
             es.close();
             break;
 
@@ -206,16 +209,6 @@ export default function FeedGrid() {
         title="Generation Failed"
         message={message || "Something went wrong while generating your feed."}
         icon={<AlertCircle className="w-8 h-8 text-red-500" />}
-      />
-    );
-  }
-
-  if (feedStatus === "COMPLETED" && !isLoading && rankedVideos.length === 0) {
-    return (
-      <ErrorDisplay
-        title="No Videos Found"
-        message="Nothing to show. Open the prompt modal and generate a new feed."
-        icon={<AlertCircle className="w-8 h-8 text-gray-400" />}
       />
     );
   }

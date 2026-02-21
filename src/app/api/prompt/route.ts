@@ -8,72 +8,99 @@ import { functionWrapper } from "@/utils/wrapper";
 import { buildFeed } from "@/lib/buildFeed";
 
 export async function POST(req: NextRequest) {
-    const userId = await getUserId();
-    const { prompt } = await req.json();
+  const userId = await getUserId();
+  const { prompt } = await req.json();
 
-    if (!prompt) {
-        return NextResponse.json({
-            error: "prompt not provided"
-        }, { status: 400 })
+  if (!prompt) {
+    return NextResponse.json(
+      {
+        error: "prompt not provided",
+      },
+      { status: 400 },
+    );
+  }
+
+  try {
+    //search for api key
+    const [row] = await db.select().from(user).where(eq(user.id, userId));
+    if (!row.youtubeApiKey) {
+      console.log("Api key for user not found");
+      return NextResponse.json(
+        {
+          message:
+            "Youtube api key not found , please enter your youtube api key first",
+          success: false,
+        },
+        { status: 403 },
+      );
     }
 
-    try {
-        await db.update(user)
-            .set({ prompt })
-            .where(eq(user.id, userId));
+    await db.update(user).set({ prompt }).where(eq(user.id, userId));
 
-        //invalidate cache
-        await Promise.all([
-            functionWrapper(() => redisClient.del(`feed:${userId}`)),
-            functionWrapper(() => redisClient.del(`feed:${userId}:status`)),
-        ]);
-        //background async job
-        buildFeed(userId).catch((err) => {
-            console.log("Feed build failed" , err); 
-        });
+    //invalidate cache
+    await Promise.all([
+      functionWrapper(() => redisClient.del(`feed:${userId}`)),
+      functionWrapper(() => redisClient.del(`feed:${userId}:status`)),
+    ]);
 
-        return NextResponse.json({
-            message: "Successfully stored the prompt",
-            success: true
-        }, { status: 200 });
+    //check if othe api key exists or not
 
-    } catch (error) {
-        console.error("Error while storing prompt", error);
-        return NextResponse.json({
-            message: "Something went wrong while storing prompt",
-            success: false,
-        }, { status: 500 })
-    }
+    //background async job
+    buildFeed(userId, row.youtubeApiKey, prompt).catch((err) => {
+      console.log("Feed build failed", err);
+    });
 
+    return NextResponse.json(
+      {
+        message: "Successfully stored the prompt",
+        success: true,
+      },
+      { status: 200 },
+    );
+  } catch (error) {
+    console.error("Error while storing prompt", error);
+    return NextResponse.json(
+      {
+        message: "Something went wrong while storing prompt",
+        success: false,
+      },
+      { status: 500 },
+    );
+  }
 }
 
 export async function GET(req: NextRequest) {
-    const userId = await getUserId();
-    try {
-        const [row] = await db
-            .select()
-            .from(user)
-            .where(eq(user.id, userId));
+  const userId = await getUserId();
+  try {
+    const [row] = await db.select().from(user).where(eq(user.id, userId));
 
-        if (!row || !row.prompt) {
-            console.error("No prompt found , missing")
-            return NextResponse.json({
-                message: "Something went wrong while getting the prompt",
-                success: false
-            }, { status: 500 });
-        }
-
-        return NextResponse.json({
-            message: "Succesfully fetched the prompt",
-            prompt,
-            success: true
-        }, { status: 200 });
-    } catch (error) {
-        console.error("Something went wrong while fetching prompt" , error); 
-        return NextResponse.json({
-            message : "Something went wrong while getting prompt", 
-            success : false
-        } , { status : 500 });
+    if (!row || !row.prompt) {
+      console.error("No prompt found , missing");
+      return NextResponse.json(
+        {
+          message: "Something went wrong while getting the prompt",
+          success: false,
+        },
+        { status: 500 },
+      );
     }
 
+    return NextResponse.json(
+      {
+        message: "Succesfully fetched the prompt",
+        prompt,
+        success: true,
+      },
+      { status: 200 },
+    );
+  } catch (error) {
+    console.error("Something went wrong while fetching prompt", error);
+    return NextResponse.json(
+      {
+        message: "Something went wrong while getting prompt",
+        success: false,
+      },
+      { status: 500 },
+    );
+  }
 }
